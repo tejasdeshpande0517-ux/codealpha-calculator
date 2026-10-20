@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>CalcPro Automated Tests</title>
+</head>
+<body>
+  <h1>CalcPro Test Suite</h1>
+  <div id="test-results">Running tests...</div>
+
+  <script>
+    // Copy the exact algorithm from script.js to verify in isolated environment
+    const OPERATORS = {
+      '+': { precedence: 1, associativity: 'L', exec: (a, b) => a + b },
+      '−': { precedence: 1, associativity: 'L', exec: (a, b) => a - b },
+      '-': { precedence: 1, associativity: 'L', exec: (a, b) => a - b },
+      '×': { precedence: 2, associativity: 'L', exec: (a, b) => a * b },
+      '*': { precedence: 2, associativity: 'L', exec: (a, b) => a * b },
+      '÷': { precedence: 2, associativity: 'L', exec: (a, b) => {
+        if (b === 0) throw new Error('Cannot divide by zero');
+        return a / b;
+      }},
+      '/': { precedence: 2, associativity: 'L', exec: (a, b) => {
+        if (b === 0) throw new Error('Cannot divide by zero');
+        return a / b;
+      }},
+      '^': { precedence: 3, associativity: 'R', exec: (a, b) => Math.pow(a, b) }
+    };
+
+    function cleanFloat(number) {
+      if (!isFinite(number)) return number;
+      if (Number.isInteger(number)) return number;
+      return parseFloat(number.toPrecision(12));
+    }
+
+    function shuntingYard(tokens) {
+      const outputQueue = [];
+      const operatorStack = [];
+
+      for (let i = 0; i < tokens.length; i++) {
+        const token = tokens[i];
+        if (!isNaN(parseFloat(token)) && isFinite(token)) {
+          outputQueue.push({ type: 'number', value: parseFloat(token) });
+        } else if (token === '(') {
+          operatorStack.push(token);
+        } else if (token === ')') {
+          while (operatorStack.length > 0 && operatorStack[operatorStack.length - 1] !== '(') {
+            outputQueue.push({ type: 'operator', value: operatorStack.pop() });
+          }
+          if (operatorStack.length === 0) throw new Error('Mismatched parentheses');
+          operatorStack.pop();
+        } else if (OPERATORS[token]) {
+          const op1 = token;
+          while (
+            operatorStack.length > 0 &&
+            operatorStack[operatorStack.length - 1] !== '(' &&
+            OPERATORS[operatorStack[operatorStack.length - 1]] &&
+            ((OPERATORS[op1].associativity === 'L' &&
+              OPERATORS[op1].precedence <= OPERATORS[operatorStack[operatorStack.length - 1]].precedence) ||
+             (OPERATORS[op1].associativity === 'R' &&
+              OPERATORS[op1].precedence < OPERATORS[operatorStack[operatorStack.length - 1]].precedence))
+          ) {
+            outputQueue.push({ type: 'operator', value: operatorStack.pop() });
+          }
+          operatorStack.push(op1);
+        } else {
+          throw new Error('Unknown symbol: ' + token);
+        }
+      }
+
+      while (operatorStack.length > 0) {
+        const op = operatorStack.pop();
+        if (op === '(' || op === ')') throw new Error('Mismatched parentheses');
+        outputQueue.push({ type: 'operator', value: op });
+      }
+
+      return outputQueue;
+    }
+
+    function evaluateRPN(rpnQueue) {
+      const stack = [];
+      for (let i = 0; i < rpnQueue.length; i++) {
+        const item = rpnQueue[i];
+        if (item.type === 'number') {
+          stack.push(item.value);
+        } else if (item.type === 'operator') {
+          if (stack.length < 2) throw new Error('Malformed expression');
+          const b = stack.pop();
+          const a = stack.pop();
+          const opInfo = OPERATORS[item.value];
+          if (!opInfo) throw new Error('Unsupported operator');
+          stack.push(opInfo.exec(a, b));
+        }
+      }
+      if (stack.length !== 1) throw new Error('Malformed expression');
+      return stack[0];
+    }
+
+    function calculateExpression(tokens) {
+      if (!tokens || tokens.length === 0) return 0;
+      const normalizedTokens = tokens.map(t => {
+        if (t === '*') return '×';
+        if (t === '/') return '÷';
+        if (t === '-') return '−';
+        return t;
+      });
+      const rpn = shuntingYard(normalizedTokens);
+      const result = evaluateRPN(rpn);
+      return cleanFloat(result);
+    }
+
+    // Run Tests
+    const tests = [
+      { name: 'Basic Addition: 15 + 27', run: () => calculateExpression(['15', '+', '27']), expected: 42 },
+      { name: 'Basic Multiplication: 7 * 8', run: () => calculateExpression(['7', '×', '8']), expected: 56 },
+      { name: 'Operator Precedence: 5 + 3 * 4', run: () => calculateExpression(['5', '+', '3', '×', '4']), expected: 17 },
+      { name: 'Parentheses Precedence: (5 + 3) * 4', run: () => calculateExpression(['(', '5', '+', '3', ')', '×', '4']), expected: 32 },
+      { name: 'Decimal Precision: 0.1 + 0.2', run: () => calculateExpression(['0.1', '+', '0.2']), expected: 0.3 },
+      { name: 'Division: 100 / 4', run: () => calculateExpression(['100', '÷', '4']), expected: 25 },
+      { name: 'Division by Zero Safety', run: () => {
+        try {
+          calculateExpression(['10', '÷', '0']);
+          return 'Failed to throw';
+        } catch(e) {
+          return e.message;
+        }
+      }, expected: 'Cannot divide by zero' },
+      { name: 'Negative Numbers: -5 + 12', run: () => calculateExpression(['-5', '+', '12']), expected: 7 },
+      { name: 'Power/Exponent: 2 ^ 3', run: () => calculateExpression(['2', '^', '3']), expected: 8 }
+    ];
+
+    let passedCount = 0;
+    let resultsHtml = '<ul>';
+    tests.forEach(test => {
+      let actual;
+      let passed = false;
+      try {
+        actual = test.run();
+        passed = (actual === test.expected);
+      } catch (err) {
+        actual = err.message;
+        passed = (actual === test.expected);
+      }
+      if (passed) passedCount++;
+      resultsHtml += `<li><strong>${test.name}</strong>: ${passed ? '✅ PASSED' : '❌ FAILED (got ' + actual + ', expected ' + test.expected + ')'}</li>`;
+    });
+    resultsHtml += `</ul><p><strong>Total: ${passedCount}/${tests.length} tests passed</strong></p>`;
+    document.getElementById('test-results').innerHTML = resultsHtml;
+  </script>
+</body>
+</html>

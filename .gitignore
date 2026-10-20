@@ -1,0 +1,5 @@
+# System & temporary logs
+test_output.txt
+.DS_Store
+Thumbs.db
+*.log
